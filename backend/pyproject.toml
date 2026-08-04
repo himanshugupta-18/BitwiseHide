@@ -22,6 +22,10 @@ dependencies = [
     "httpx>=0.28.0,<1.0.0",
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.0,<9.0.0",
