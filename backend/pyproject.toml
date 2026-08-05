@@ -84,5 +84,3 @@ plugins = ["pydantic.mypy"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
