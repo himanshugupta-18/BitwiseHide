@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     app_name: str = "BitwiseHide"
     app_version: str = "0.1.0"
-    app_env: Literal["development", "staging", "production"] = "development"
+    app_env: Literal["development", "staging", "production", "testing"] = "development"
     debug: bool = True
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
 
@@ -49,7 +49,11 @@ class Settings(BaseSettings):
     max_image_size_mb: int = 10
     allowed_image_formats: list[str] = ["png", "bmp", "tiff"]
 
-
+    # --- JWT Authentication ---
+    jwt_secret_key: str = "dev-secret-change-in-production-min-32-chars"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 30
+    refresh_token_expire_days: int = 7
 
     @field_validator("cors_origins", mode="before")
     @classmethod
