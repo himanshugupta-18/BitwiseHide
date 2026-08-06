@@ -52,3 +52,36 @@ class TimestampMixin:
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class User(Base, UUIDMixin, TimestampMixin):
+    """
+    User account model.
+
+    Stores authentication credentials and profile information.
+    Password is stored as Argon2id hash — never plaintext.
+    """
+
+    __tablename__ = "users"
+
+    email: Mapped[str] = mapped_column(
+        index=True,
+        unique=True,
+        nullable=False,
+    )
+    username: Mapped[str] = mapped_column(
+        index=True,
+        unique=True,
+        nullable=False,
+    )
+    password_hash: Mapped[str] = mapped_column(
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(
+        default=True,
+        nullable=False,
+    )
+    is_verified: Mapped[bool] = mapped_column(
+        default=False,
+        nullable=False,
+    )
