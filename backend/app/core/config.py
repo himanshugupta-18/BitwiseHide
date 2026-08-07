@@ -51,6 +51,7 @@ class Settings(BaseSettings):
 
     # --- JWT Authentication ---
     jwt_secret_key: str = "dev-secret-change-in-production-min-32-chars"
+    jwt_refresh_secret_key: str = "dev-refresh-secret-change-in-production-min-32-chars"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
