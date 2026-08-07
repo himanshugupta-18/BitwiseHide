@@ -68,6 +68,7 @@ def override_settings() -> Settings:
         debug=True,
         database_url=TEST_DATABASE_URL,
         jwt_secret_key="test-secret-key-for-testing-only",
+        jwt_refresh_secret_key="test-refresh-secret-key-for-testing-only",
         jwt_algorithm="HS256",
         access_token_expire_minutes=30,
         refresh_token_expire_days=7,
