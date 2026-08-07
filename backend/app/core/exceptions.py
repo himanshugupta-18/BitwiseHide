@@ -59,6 +59,20 @@ class ValidationError(BitwiseHideError):
         super().__init__(message=message, detail={"errors": errors or []})
 
 
+class InvalidCredentialsError(BitwiseHideError):
+    """
+    Raised when authentication fails (bad credentials, invalid/expired token,
+    wrong current password, deactivated account).
+
+    Distinct from ValidationError so the API can return 400 instead of 422 —
+    a wrong password is a request that is valid in shape but failed
+    authentication, not malformed input.
+    """
+
+    def __init__(self, message: str = "Invalid credentials.") -> None:
+        super().__init__(message=message)
+
+
 class ConflictError(BitwiseHideError):
     """Raised when an operation conflicts with existing state (e.g., duplicate email)."""
 
