@@ -26,6 +26,7 @@ from app.core.config import get_settings
 from app.core.exceptions import (
     BitwiseHideError,
     ConflictError,
+    InvalidCredentialsError,
     NotFoundError,
     ServiceUnavailableError,
     ValidationError,
@@ -39,6 +40,7 @@ logger = get_logger(__name__)
 _EXCEPTION_STATUS_MAP: dict[type[BitwiseHideError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    InvalidCredentialsError: status.HTTP_400_BAD_REQUEST,
     ConflictError: status.HTTP_409_CONFLICT,
     ServiceUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
