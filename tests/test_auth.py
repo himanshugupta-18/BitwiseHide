@@ -206,8 +206,11 @@ class TestRefreshToken:
             "/api/v1/auth/refresh",
             json={"refresh_token": access_token},
         )
+        # Access tokens are signed with a different secret than refresh tokens,
+        # so the access token fails signature verification against the refresh
+        # secret and is rejected as an invalid refresh token.
         assert response.status_code == 400
-        assert "Invalid token type" in response.json()["message"]
+        assert "Invalid refresh token" in response.json()["message"]
 
 
 class TestGetCurrentUser:
@@ -345,3 +348,71 @@ class TestUpdateProfile:
             json={"username": "invalid username!"},
         )
         assert response.status_code == 422
+
+
+class TestRegisterPasswordPolicy:
+    """Test UserCreate password strength validation (schema level)."""
+
+    async def test_register_password_missing_uppercase(self, client: AsyncClient):
+        """Password without an uppercase letter is rejected."""
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "username": "newuser",
+                "password": "validpass123!",
+            },
+        )
+        assert response.status_code == 422
+
+    async def test_register_password_missing_lowercase(self, client: AsyncClient):
+        """Password without a lowercase letter is rejected."""
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "username": "newuser",
+                "password": "VALIDPASS123!",
+            },
+        )
+        assert response.status_code == 422
+
+    async def test_register_password_missing_number(self, client: AsyncClient):
+        """Password without a number is rejected."""
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "username": "newuser",
+                "password": "ValidPass!",
+            },
+        )
+        assert response.status_code == 422
+
+    async def test_register_password_missing_special(self, client: AsyncClient):
+        """Password without a special character is rejected."""
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "newuser@example.com",
+                "username": "newuser",
+                "password": "ValidPass123",
+            },
+        )
+        assert response.status_code == 422
+
+
+class TestLogout:
+    """Test stateless logout endpoint."""
+
+    async def test_logout_success(self, client: AsyncClient):
+        """Logout returns 200 and instructs the client to discard tokens."""
+        response = await client.post("/api/v1/auth/logout")
+        assert response.status_code == 200
+        assert "Logged out" in response.json()["message"]
+
+    async def test_logout_does_not_require_auth(self, client: AsyncClient):
+        """Logout succeeds even with no token (stateless, client-side discard)."""
+        response = await client.post("/api/v1/auth/logout")
+        assert response.status_code == 200
+        assert "discard" in response.json()["message"].lower()
