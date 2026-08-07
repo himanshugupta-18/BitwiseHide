@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import (
+    ConflictError,
+    InvalidCredentialsError,
+    NotFoundError,
+    ValidationError,
+)
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -89,13 +94,13 @@ class AuthService:
         """
         user = await self._user_repo.get_by_email_or_username(identifier)
         if not user:
-            raise ValidationError(message="Invalid credentials")
+            raise InvalidCredentialsError(message="Invalid credentials")
 
         if not user.is_active:
-            raise ValidationError(message="Account is deactivated")
+            raise InvalidCredentialsError(message="Account is deactivated")
 
         if not verify_password(password, user.password_hash):
-            raise ValidationError(message="Invalid credentials")
+            raise InvalidCredentialsError(message="Invalid credentials")
 
         return user
 
@@ -132,19 +137,21 @@ class AuthService:
             Tuple of (new_access_token, new_refresh_token)
 
         Raises:
-            ValidationError: If refresh token is invalid or expired
+            InvalidCredentialsError: If refresh token is invalid or expired
         """
         try:
-            payload = decode_token(refresh_token)
+            # Decode against the REFRESH secret — access tokens are signed with a
+            # different secret and will be rejected here.
+            payload = decode_token(refresh_token, token_kind="refresh")  # noqa: S106 — bandit false positive
         except Exception as e:
-            raise ValidationError(message="Invalid refresh token") from e
+            raise InvalidCredentialsError(message="Invalid refresh token") from e
 
         if payload.type != "refresh":
-            raise ValidationError(message="Invalid token type")
+            raise InvalidCredentialsError(message="Invalid token type")
 
         user = await self._user_repo.get_by_id(UUID(payload.sub))
         if not user or not user.is_active:
-            raise ValidationError(message="User not found or inactive")
+            raise InvalidCredentialsError(message="User not found or inactive")
 
         return await self.create_tokens(user)
 
@@ -180,14 +187,15 @@ class AuthService:
 
         Raises:
             NotFoundError: If user doesn't exist
-            ValidationError: If current password is wrong or new password fails validation
+            InvalidCredentialsError: If current password is wrong
+            ValidationError: If new password fails validation
         """
         self._validate_password(new_password)
 
         user = await self.get_user_by_id(user_id)
 
         if not verify_password(current_password, user.password_hash):
-            raise ValidationError(message="Current password is incorrect")
+            raise InvalidCredentialsError(message="Current password is incorrect")
 
         user.password_hash = hash_password(new_password)
         return await self._user_repo.update(user)
@@ -246,6 +254,8 @@ class AuthService:
             errors.append("Password must contain at least one digit")
         if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
             errors.append("Password must contain at least one special character")
+        if len(password.encode("utf-8")) > 72:
+            errors.append("Password must be at most 72 bytes (bcrypt limit)")
 
         if errors:
             raise ValidationError(
