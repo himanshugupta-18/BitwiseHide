@@ -39,7 +39,7 @@ class UserRepository:
         Args:
             email: User's email (unique)
             username: User's username (unique)
-            password_hash: Argon2id hashed password
+            password_hash: bcrypt hashed password
 
         Returns:
             Created User entity

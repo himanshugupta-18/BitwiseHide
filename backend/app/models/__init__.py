@@ -59,7 +59,7 @@ class User(Base, UUIDMixin, TimestampMixin):
     User account model.
 
     Stores authentication credentials and profile information.
-    Password is stored as Argon2id hash — never plaintext.
+    Password is stored as bcrypt hash — never plaintext.
     """
 
     __tablename__ = "users"
