@@ -4,6 +4,7 @@ Authentication API endpoints.
 Endpoints:
 - POST /auth/register — Register new user
 - POST /auth/login — Login with email/username + password
+- POST /auth/logout — Stateless logout (client discards tokens)
 - POST /auth/refresh — Refresh access token using refresh token
 - GET  /auth/me — Get current user profile (requires auth)
 - POST /auth/change-password — Change password (requires auth)
@@ -13,84 +14,44 @@ Endpoints:
 from __future__ import annotations
 
 from typing import Annotated
-from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, status
 
-from app.core.dependencies import DatabaseDep
-from app.core.exceptions import ValidationError
-from app.core.security import decode_token
-from app.db.session import get_async_session
+from app.core.config import get_settings
+from app.core.dependencies import DatabaseDep, get_current_user
+from app.models import User
 from app.schemas.auth import (
     AuthResponse,
     ChangePasswordRequest,
     LoginRequest,
     MessageResponse,
-    RegisterRequest,
     RefreshTokenRequest,
     TokenResponse,
     UpdateProfileRequest,
+    UserCreate,
     UserResponse,
 )
 from app.services.auth_service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-
-# --- Dependency: Current User ---
-
-async def get_current_user(
-    authorization: str | None = Header(default=None),
-    db: AsyncSession = Depends(get_async_session),
-) -> UserResponse:
-    """
-    Extract and validate current user from Authorization header.
-
-    Expected format: "Bearer <access_token>"
-
-    Raises:
-        HTTPException: 401 if token missing, invalid, or expired
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid Authorization header",
-        )
-
-    token = authorization[7:]  # Remove "Bearer "
-    try:
-        payload = decode_token(token)
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid token: {e}",
-        ) from e
-
-    if payload.type != "access":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token type",
-        )
-
-    from app.repositories.user_repository import UserRepository
-    from app.models import User
-
-    user_repo = UserRepository(db)
-    user = await user_repo.get_by_id(UUID(payload.sub))
-    if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
-        )
-
-    return UserResponse.model_validate(user)
+CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
 def get_auth_service(db: DatabaseDep) -> AuthService:
     """Provide AuthService with UserRepository."""
     from app.repositories.user_repository import UserRepository
     return AuthService(UserRepository(db))
+
+
+def _token_response(access_token: str, refresh_token: str) -> TokenResponse:
+    """Build a TokenResponse with the access token lifetime from settings."""
+    settings = get_settings()
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
 
 
 # --- Endpoints ---
@@ -106,7 +67,7 @@ def get_auth_service(db: DatabaseDep) -> AuthService:
     },
 )
 async def register(
-    request: RegisterRequest,
+    request: UserCreate,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthResponse:
     """
@@ -126,11 +87,7 @@ async def register(
 
     return AuthResponse(
         user=UserResponse.model_validate(user),
-        tokens=TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=1800,  # 30 minutes
-        ),
+        tokens=_token_response(access_token, refresh_token),
     )
 
 
@@ -139,7 +96,7 @@ async def register(
     response_model=AuthResponse,
     summary="Login with email/username and password",
     responses={
-        401: {"description": "Invalid credentials"},
+        400: {"description": "Invalid credentials"},
         422: {"description": "Validation error"},
     },
 )
@@ -161,11 +118,32 @@ async def login(
 
     return AuthResponse(
         user=UserResponse.model_validate(user),
-        tokens=TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=1800,
-        ),
+        tokens=_token_response(access_token, refresh_token),
+    )
+
+
+@router.post(
+    "/logout",
+    response_model=MessageResponse,
+    summary="Logout (stateless)",
+    responses={
+        200: {"description": "Tokens invalidated client-side"},
+    },
+)
+async def logout() -> MessageResponse:
+    """
+    Log the client out.
+
+    JWT is stateless — there is no server-side session to revoke, so this
+    endpoint does NOT fake revocation. It returns a success response
+    instructing the client to discard its stored access and refresh tokens.
+
+    Cookie-based transport is not currently configured, so there are no
+    cookies to clear here; if cookie storage is added, delete the auth
+    cookies on this response.
+    """
+    return MessageResponse(
+        message="Logged out successfully. Discard your access and refresh tokens."
     )
 
 
@@ -174,7 +152,7 @@ async def login(
     response_model=TokenResponse,
     summary="Refresh access token",
     responses={
-        401: {"description": "Invalid or expired refresh token"},
+        400: {"description": "Invalid or expired refresh token"},
     },
 )
 async def refresh(
@@ -190,11 +168,7 @@ async def refresh(
         refresh_token=request.refresh_token,
     )
 
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=1800,
-    )
+    return _token_response(access_token, refresh_token)
 
 
 @router.get(
@@ -206,7 +180,7 @@ async def refresh(
     },
 )
 async def get_me(
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: CurrentUserDep,
 ) -> UserResponse:
     """Get authenticated user's profile."""
     return current_user
@@ -224,7 +198,7 @@ async def get_me(
 )
 async def change_password(
     request: ChangePasswordRequest,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: CurrentUserDep,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> MessageResponse:
     """Change authenticated user's password."""
@@ -247,7 +221,7 @@ async def change_password(
 )
 async def update_profile(
     request: UpdateProfileRequest,
-    current_user: UserResponse = Depends(get_current_user),
+    current_user: CurrentUserDep,
     auth_service: AuthService = Depends(get_auth_service),
 ) -> UserResponse:
     """Update authenticated user's email and/or username."""
