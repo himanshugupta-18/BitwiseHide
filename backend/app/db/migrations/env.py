@@ -4,8 +4,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import create_async_engine
 
-# Add app to path to import models and configuration
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+# Add backend to path so `app` package is importable (env.py lives at
+# backend/app/db/migrations/env.py — three levels above the backend root).
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 from app.core.config import get_settings
 from app.models import Base
