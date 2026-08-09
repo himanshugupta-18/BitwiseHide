@@ -99,6 +99,21 @@ class StorageError(BitwiseHideError):
         super().__init__(message=message)
 
 
+class EncryptionError(BitwiseHideError):
+    """
+    Raised when encryption/decryption fails or an encrypted payload is
+    invalid, malformed, or has been tampered with.
+
+    The encryption service FAILS CLOSED: it never returns corrupted plaintext.
+    Any failure — wrong password, modified ciphertext/nonce/salt/version,
+    malformed base64, unsupported payload version, or out-of-bounds KDF
+    parameters — surfaces as this exception.
+    """
+
+    def __init__(self, message: str = "Encryption/decryption failed.") -> None:
+        super().__init__(message=message)
+
+
 class ServiceUnavailableError(BitwiseHideError):
     """Raised when a required external service (DB, Redis, AI) is unreachable."""
 
