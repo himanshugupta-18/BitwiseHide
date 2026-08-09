@@ -128,6 +128,19 @@ class SteganographyError(BitwiseHideError):
         super().__init__(message=message)
 
 
+class AdaptiveAnalysisError(BitwiseHideError):
+    """
+    Raised when adaptive image analysis cannot produce a complexity map.
+
+    Covers invalid input that cannot be scored — input that is not a PIL image,
+    or an image with zero width/height. Invalid analysis *weights* raise
+    ValueError instead (they are caller misconfiguration, not bad data).
+    """
+
+    def __init__(self, message: str = "Adaptive image analysis failed.") -> None:
+        super().__init__(message=message)
+
+
 class ServiceUnavailableError(BitwiseHideError):
     """Raised when a required external service (DB, Redis, AI) is unreachable."""
 
