@@ -114,6 +114,20 @@ class EncryptionError(BitwiseHideError):
         super().__init__(message=message)
 
 
+class SteganographyError(BitwiseHideError):
+    """
+    Raised when embedding or extracting a steganographic payload fails.
+
+    Covers invalid/malformed/truncated images, images carrying no valid
+    BitwiseHide payload, insufficient image capacity, and payload lengths that
+    exceed the image's capacity. The steganography layer FAILS CLOSED: it never
+    silently truncates a payload or returns partial/corrupted data.
+    """
+
+    def __init__(self, message: str = "Steganography operation failed.") -> None:
+        super().__init__(message=message)
+
+
 class ServiceUnavailableError(BitwiseHideError):
     """Raised when a required external service (DB, Redis, AI) is unreachable."""
 
