@@ -141,6 +141,22 @@ class AdaptiveAnalysisError(BitwiseHideError):
         super().__init__(message=message)
 
 
+class AdaptiveEmbeddingError(BitwiseHideError):
+    """
+    Raised when adaptive embedding or extraction fails (Phase 2.6).
+
+    Covers invalid images, insufficient image capacity, images carrying no
+    valid adaptive BitwiseHide payload, and malformed/unsupported headers —
+    a missing or corrupted magic, an unknown format version, unsupported
+    flags, invalid analysis metadata, or an impossible payload length. The
+    adaptive embedding layer FAILS CLOSED: it never silently truncates a
+    payload and never returns partial or corrupted data.
+    """
+
+    def __init__(self, message: str = "Adaptive embedding failed.") -> None:
+        super().__init__(message=message)
+
+
 class ServiceUnavailableError(BitwiseHideError):
     """Raised when a required external service (DB, Redis, AI) is unreachable."""
 
