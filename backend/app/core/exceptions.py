@@ -157,6 +157,21 @@ class AdaptiveEmbeddingError(BitwiseHideError):
         super().__init__(message=message)
 
 
+class EvaluationError(BitwiseHideError):
+    """
+    Raised when the evaluation layer cannot compute a metric or comparison.
+
+    Covers invalid evaluation input — input that is not a PIL image, an image
+    with zero width/height, or cover PNG data that cannot be decoded as a
+    valid PNG. Metric callers that pass mismatched or malformed *arrays* raise
+    ValueError instead (caller misconfiguration, mirroring the weight
+    validation in core.adaptive).
+    """
+
+    def __init__(self, message: str = "Evaluation failed.") -> None:
+        super().__init__(message=message)
+
+
 class ServiceUnavailableError(BitwiseHideError):
     """Raised when a required external service (DB, Redis, AI) is unreachable."""
 
