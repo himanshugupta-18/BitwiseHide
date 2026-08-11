@@ -172,7 +172,7 @@ def peak_signal_to_noise_ratio(
     return float(10.0 * math.log10((max_value * max_value) / mse_value))
 
 
-def structural_similarity(
+def structural_similarity_map(
     cover: UInt8Array,
     stego: UInt8Array,
     *,
@@ -181,14 +181,14 @@ def structural_similarity(
     k1: float = _SSIM_K1,
     k2: float = _SSIM_K2,
     data_range: float = MAX_PIXEL_VALUE,
-) -> float:
+) -> FloatArray:
     """
-    Structural similarity (Wang et al. 2004) between cover and stego.
+    Per-pixel structural similarity map (Wang et al. 2004) between two images.
 
     Computes luminance/contrast/structure statistics over Gaussian windows
-    with reflect-padded convolution, then returns the mean SSIM over every
-    pixel (and every channel, for RGB input). 1.0 iff the images are
-    identical; values below zero indicate anticorrelated structure.
+    with reflect-padded convolution, returning one SSIM value per pixel (per
+    channel, for RGB input). 1.0 where the images are locally identical;
+    values below zero indicate anticorrelated structure.
 
     Args:
         cover: Original image array, shape (H, W) or (H, W, 3).
@@ -200,7 +200,8 @@ def structural_similarity(
         data_range: Peak signal value used to scale C1/C2; 255 for 8-bit.
 
     Returns:
-        Mean SSIM in ``[-1.0, 1.0]``.
+        SSIM map of shape (H, W) for grayscale input, or (H, W, 3) for RGB
+        input, in ``[-1.0, 1.0]``.
 
     Raises:
         ValueError: If the arrays differ in shape, `window_size` is even or
@@ -218,28 +219,72 @@ def structural_similarity(
         msg = f"data_range must be positive, got {data_range}."
         raise ValueError(msg)
 
-    effective = _effective_window(window_size, cover_arr.shape)
-    kernel = _gaussian_kernel(effective, sigma)
+    effective = effective_window(window_size, cover_arr.shape)
+    kernel = gaussian_kernel(effective, sigma)
 
     x = cover_arr.astype(np.float64)
     y = stego_arr.astype(np.float64)
 
-    mu_x = _convolve2d(x, kernel)
-    mu_y = _convolve2d(y, kernel)
+    mu_x = convolve2d(x, kernel)
+    mu_y = convolve2d(y, kernel)
     mu_x2 = mu_x * mu_x
     mu_y2 = mu_y * mu_y
     mu_xy = mu_x * mu_y
 
-    sigma_x2 = _convolve2d(x * x, kernel) - mu_x2
-    sigma_y2 = _convolve2d(y * y, kernel) - mu_y2
-    sigma_xy = _convolve2d(x * y, kernel) - mu_xy
+    sigma_x2 = convolve2d(x * x, kernel) - mu_x2
+    sigma_y2 = convolve2d(y * y, kernel) - mu_y2
+    sigma_xy = convolve2d(x * y, kernel) - mu_xy
 
     c1 = (k1 * data_range) ** 2
     c2 = (k2 * data_range) ** 2
 
     numerator = (2.0 * mu_xy + c1) * (2.0 * sigma_xy + c2)
     denominator = (mu_x2 + mu_y2 + c1) * (sigma_x2 + sigma_y2 + c2)
-    ssim_map = numerator / denominator
+    return numerator / denominator
+
+
+def structural_similarity(
+    cover: UInt8Array,
+    stego: UInt8Array,
+    *,
+    window_size: int = _SSIM_WINDOW_SIZE,
+    sigma: float = _SSIM_SIGMA,
+    k1: float = _SSIM_K1,
+    k2: float = _SSIM_K2,
+    data_range: float = MAX_PIXEL_VALUE,
+) -> float:
+    """
+    Mean structural similarity (Wang et al. 2004) between cover and stego.
+
+    Convenience wrapper over structural_similarity_map: returns the mean SSIM
+    over every pixel (and every channel, for RGB input). 1.0 iff the images
+    are identical; values below zero indicate anticorrelated structure.
+
+    Args:
+        cover: Original image array, shape (H, W) or (H, W, 3).
+        stego: Stego image array, identical shape to `cover`.
+        window_size: Odd Gaussian window size; clamped to the smaller image
+            axis when the image is smaller than the requested window.
+        sigma: Gaussian window standard deviation.
+        k1, k2: Stabilization constants for the luminance/contrast terms.
+        data_range: Peak signal value used to scale C1/C2; 255 for 8-bit.
+
+    Returns:
+        Mean SSIM in ``[-1.0, 1.0]``.
+
+    Raises:
+        ValueError: If the arrays differ in shape, `window_size` is even or
+            non-positive, or `data_range` is non-positive.
+    """
+    ssim_map = structural_similarity_map(
+        cover,
+        stego,
+        window_size=window_size,
+        sigma=sigma,
+        k1=k1,
+        k2=k2,
+        data_range=data_range,
+    )
     return float(np.mean(ssim_map))
 
 
@@ -279,7 +324,16 @@ def _validate_array(arr: object, name: str) -> UInt8Array:
     return arr
 
 
-def _effective_window(window_size: int, shape: tuple[int, ...]) -> int:
+# --- Reflect-padded Gaussian window primitives (public) ----------------------
+#
+# These are the shared window building blocks behind structural_similarity_map
+# and the Phase 2.8 label generator: an odd Gaussian window clamped to the
+# image, and reflect-padded convolution. They are public so ai.labels derives
+# its single-pixel marginal-cost label from the exact same window the metric
+# layer uses — the label signal is definitionally consistent with SSIM.
+
+
+def effective_window(window_size: int, shape: tuple[int, ...]) -> int:
     """
     Clamp `window_size` so it never exceeds the smaller image axis.
 
@@ -294,7 +348,7 @@ def _effective_window(window_size: int, shape: tuple[int, ...]) -> int:
     return smallest - 1 if smallest - 1 >= 1 else 1
 
 
-def _gaussian_kernel(size: int, sigma: float) -> FloatArray:
+def gaussian_kernel(size: int, sigma: float) -> FloatArray:
     """Normalized Gaussian kernel of shape (size, size); sums to 1.0."""
     coords = np.arange(size, dtype=np.float64) - (size - 1) / 2.0
     g = np.exp(-(coords * coords) / (2.0 * sigma * sigma))
@@ -302,7 +356,7 @@ def _gaussian_kernel(size: int, sigma: float) -> FloatArray:
     return kernel / float(kernel.sum())
 
 
-def _convolve2d(arr: FloatArray, kernel: FloatArray) -> FloatArray:
+def convolve2d(arr: FloatArray, kernel: FloatArray) -> FloatArray:
     """
     2D convolution of `kernel` over `arr` with reflect padding, same size out.
 
