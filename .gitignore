@@ -49,6 +49,13 @@ storage/
 *.bmp
 *.tiff
 
+# --- Downloaded datasets (never commit) ---
+# Downloaded dataset contents (e.g. BSDS500) and locally generated synthetic
+# smoke datasets live under dataset/ and must NOT be tracked. Only the
+# placeholder .gitkeep is kept. See docs/dataset.md for provenance.
+dataset/*
+!dataset/.gitkeep
+
 # --- Logs ---
 *.log
 
