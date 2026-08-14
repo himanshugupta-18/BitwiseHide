@@ -37,7 +37,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from ai.cnn import SuitabilityCNN
     from ai.dataloader import SuitabilityDataset
@@ -58,6 +58,20 @@ class TrainConfig:
     beta2: float = 0.999
     eps: float = 1e-8
     seed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.epochs < 1:
+            raise ValueError(f"epochs must be at least 1, got {self.epochs}.")
+        if self.batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, got {self.batch_size}.")
+        if self.learning_rate <= 0.0:
+            raise ValueError(f"learning_rate must be positive, got {self.learning_rate}.")
+        if not (0.0 <= self.beta1 < 1.0):
+            raise ValueError(f"beta1 must be in [0, 1), got {self.beta1}.")
+        if not (0.0 <= self.beta2 < 1.0):
+            raise ValueError(f"beta2 must be in [0, 1), got {self.beta2}.")
+        if self.eps <= 0.0:
+            raise ValueError(f"eps must be positive, got {self.eps}.")
 
 
 @dataclass(frozen=True)
@@ -167,6 +181,7 @@ def train(
     *,
     config: TrainConfig = TrainConfig(),
     val_dataset: SuitabilityDataset | None = None,
+    epoch_callback: Callable[[int, SuitabilityCNN], None] | None = None,
 ) -> TrainingHistory:
     """Train `model` on `train_dataset` and return per-epoch MSE history.
 
@@ -180,6 +195,12 @@ def train(
         train_dataset: One split's (Z-domain input, label) pairs.
         config: Hyperparameters, including the batch-shuffle seed.
         val_dataset: Optional held-out split for per-epoch validation.
+        epoch_callback: Optional hook invoked after each epoch (post-validation,
+            zero-based ``(epoch_index, model)``). Because it runs after the
+            model is fully updated for that epoch, a snapshot taken inside it
+            reproduces the state whose validation loss was just recorded — the
+            mechanism Phase 2.8.4's best-by-validation selection relies on. The
+            hook must not mutate the model.
 
     Returns:
         The per-epoch train/validation MSE history.
@@ -204,7 +225,7 @@ def train(
     rng = np.random.default_rng(config.seed)
     train_losses: list[float] = []
     val_losses: list[float] = []
-    for _ in range(config.epochs):
+    for epoch in range(config.epochs):
         sum_sq = 0.0
         count = 0
         for x, y in train_dataset.shuffled_batches(config.batch_size, rng):
@@ -217,6 +238,8 @@ def train(
         train_losses.append(sum_sq / count)
         if val_dataset is not None:
             val_losses.append(evaluate(model, val_dataset).mse)
+        if epoch_callback is not None:
+            epoch_callback(epoch, model)
     return TrainingHistory(
         train_loss=tuple(train_losses),
         val_loss=tuple(val_losses),
@@ -249,6 +272,38 @@ def evaluate(model: SuitabilityCNN, dataset: SuitabilityDataset) -> SplitMetrics
         sum_abs += float(np.abs(diff).sum())
         count += int(y.size)
     return SplitMetrics(mse=sum_sq / count, mae=sum_abs / count, count=len(dataset))
+
+
+def snapshot_parameters(model: SuitabilityCNN) -> tuple[tuple[FloatArray, FloatArray], ...]:
+    """Deep-copy `model`'s (weight, bias) pairs in forward order.
+
+    The snapshot is fully independent of the live model, so the model can keep
+    training while the snapshot stays fixed. Phase 2.8.4 uses this to retain the
+    validation-best model state for checkpointing.
+    """
+    return tuple((weight.copy(), bias.copy()) for weight, bias in model.parameters())
+
+
+def restore_parameters(
+    model: SuitabilityCNN,
+    snapshot: Sequence[tuple[FloatArray, FloatArray]],
+) -> None:
+    """Overwrite `model`'s parameters in place from a `snapshot_parameters` copy.
+
+    The snapshot must have been produced for the same architecture (same layer
+    shapes); lengths are validated by the ``strict`` zip.
+
+    Raises:
+        ValueError: If `snapshot` has a different number of (weight, bias) pairs
+            than `model`.
+    """
+    parameters = model.parameters()
+    if len(snapshot) != len(parameters):
+        msg = f"snapshot has {len(snapshot)} layers, model has {len(parameters)}."
+        raise ValueError(msg)
+    for (weight, bias), (saved_weight, saved_bias) in zip(parameters, snapshot, strict=True):
+        weight[:] = saved_weight
+        bias[:] = saved_bias
 
 
 # --- Internal helpers ---------------------------------------------------------
