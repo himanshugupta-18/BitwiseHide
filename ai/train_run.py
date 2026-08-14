@@ -23,11 +23,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ai.artifact import ModelArtifact
 from ai.cnn import SuitabilityCNN
 from ai.dataloader import SuitabilityDataset
 from ai.prepare_dataset import Dataset, discover_bsds500, write_synthetic_dataset
 from ai.split import Split, resolve_split
 from ai.training import (
+    SplitMetrics,
     TrainConfig,
     TrainingHistory,
     evaluate,
@@ -247,6 +249,17 @@ def _run_training_with_checkpointing(
     Creates the model, trains with epoch callbacks that snapshot the
     validation-best state, restores the best model, and evaluates on test.
     """
+    _run = _run_training_with_checkpointing_internal(train_ds, val_ds, test_ds, run_config)
+    return _run.result
+
+
+def _run_training_with_checkpointing_internal(
+    train_ds: SuitabilityDataset,
+    val_ds: SuitabilityDataset,
+    test_ds: SuitabilityDataset,
+    run_config: RunConfig,
+) -> _TrainingRun:
+    """Internal training that returns model and dataset for artifact creation."""
     train_config = _create_train_config(run_config)
 
     # Initialize model with the global seed for reproducibility
@@ -283,7 +296,7 @@ def _run_training_with_checkpointing(
     best_val_metrics = evaluate(model, val_ds)
     test_metrics = evaluate(model, test_ds)
 
-    return RunResult(
+    result = RunResult(
         history=history,
         best_epoch=best_epoch,
         best_val_mse=best_val_metrics.mse,
@@ -291,4 +304,69 @@ def _run_training_with_checkpointing(
         test_mse=test_metrics.mse,
         test_mae=test_metrics.mae,
         test_count=test_metrics.count,
+    )
+
+    return _TrainingRun(
+        result=result, model=model, train_ds=train_ds, val_ds=val_ds, test_ds=test_ds
+    )
+
+
+@dataclass(frozen=True)
+class _TrainingRun:
+    """Internal container for training run with model and datasets."""
+
+    result: RunResult
+    model: SuitabilityCNN
+    train_ds: SuitabilityDataset
+    val_ds: SuitabilityDataset
+    test_ds: SuitabilityDataset
+
+
+def create_artifact(
+    result: RunResult,
+    model: SuitabilityCNN,
+    *,
+    run_config: RunConfig,
+    dataset: Dataset,
+    artifact_id: str | None = None,
+    description: str = "",
+) -> ModelArtifact:
+    """
+    Create a ModelArtifact from a training run result.
+
+    This extracts the best-validation model (already restored in `model`)
+    and packages it with all metadata needed for reproducibility.
+
+    Args:
+        result: The RunResult from the training run.
+        model: The trained model (must be at the best epoch state).
+        run_config: The RunConfig used for training.
+        dataset: The dataset used for training.
+        artifact_id: Optional explicit artifact ID; generated if omitted.
+        description: Optional human-readable description.
+
+    Returns:
+        A complete ModelArtifact ready to save or register.
+    """
+    best_val_metrics = SplitMetrics(
+        mse=result.best_val_mse,
+        mae=result.best_val_mae,
+        count=len(dataset.images) // 3,  # Approximate validation split count
+    )
+    test_metrics = SplitMetrics(
+        mse=result.test_mse,
+        mae=result.test_mae,
+        count=result.test_count,
+    )
+    return ModelArtifact.create(
+        model=model,
+        train_config=_create_train_config(run_config),
+        seed=run_config.seed,
+        dataset=dataset,
+        history=result.history,
+        best_epoch=result.best_epoch,
+        best_val_metrics=best_val_metrics,
+        test_metrics=test_metrics,
+        artifact_id=artifact_id,
+        description=description,
     )
