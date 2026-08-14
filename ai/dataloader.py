@@ -43,8 +43,9 @@ from ai.prepare_dataset import DatasetError, load_image_rgb
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    from ai.prepare_dataset import Dataset, ImageInfo, Split
     from app.core.evaluation import FloatArray, UInt8Array
+
+    from ai.prepare_dataset import Dataset, ImageInfo, Split
 
 
 @dataclass(frozen=True)

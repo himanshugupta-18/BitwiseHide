@@ -39,9 +39,10 @@ import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from app.core.evaluation import FloatArray
+
     from ai.cnn import SuitabilityCNN
     from ai.dataloader import SuitabilityDataset
-    from app.core.evaluation import FloatArray
 
 #: Fixed batch size used by ``evaluate`` (irrelevant to training results).
 _EVAL_BATCH_SIZE = 16
