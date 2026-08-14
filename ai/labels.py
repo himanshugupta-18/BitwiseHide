@@ -63,8 +63,6 @@ Design constraints:
 from __future__ import annotations
 
 import numpy as np
-from PIL import Image
-
 from app.core.evaluation import (
     _SSIM_K1,
     _SSIM_K2,
@@ -77,6 +75,7 @@ from app.core.evaluation import (
     effective_window,
     gaussian_kernel,
 )
+from PIL import Image
 
 #: Byte mask that clears every channel LSB (the Z(image) analysis domain).
 _LSB_CLEAR = 0xFE
